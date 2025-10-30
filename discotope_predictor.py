@@ -31,7 +31,7 @@ class DiscoTopePredictor:
                 with open(pdb_file, 'w') as f:
                     f.write(structure_content)
                 
-                dataset = Discotope_Dataset_web(str(pdb_file))
+                dataset = Discotope_Dataset_web(str(pdb_file), structure_type)
                 
                 if not hasattr(dataset, 'df') or dataset.df.empty:
                     raise RuntimeError("Failed to process structure")
