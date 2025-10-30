@@ -89,7 +89,7 @@ def create_3d_structure_viewer(structure_content: str, epitope_results: List[Tup
     
     return view
 
-def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: List = None):
+def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: List = None, dt_fallback: bool = False):
     """Create comprehensive visualizations for epitope predictions"""
     
     # BepiPred visualization
@@ -215,8 +215,13 @@ def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: L
                     marker=dict(color='red', size=10, symbol='circle')
                 ), secondary_y=False)
             
+            # Create title based on fallback status
+            title = "DiscoTope-3.0 Structure-based Epitope Predictions"
+            if dt_fallback:
+                title += " (Fallback Mode)"
+            
             fig.update_layout(
-                title="DiscoTope-3.0 Structure-based Epitope Predictions",
+                title=title,
                 xaxis_title="Residue Position",
                 height=400
             )
@@ -262,24 +267,26 @@ def run_predictions(uniprot_id: str, sequence: str, structure_content: str, stru
                 dt_predictor = DiscoTopePredictor()
                 dt_results = dt_predictor.predict_epitopes(structure_content, structure_type)
                 results['discotope'] = dt_results
-                st.success(f"DiscoTope-3.0 completed: {len(dt_results)} residues analyzed")
-            except Exception as e:
-                error_msg = str(e)
-                if "segmentation fault" in error_msg.lower() or "ESM-IF1" in error_msg:
-                    st.error("⚠️ **DiscoTope-3.0 Failed Due to Model Issues**")
-                    st.warning(
-                        "The official DiscoTope-3.0 ESM-IF1 model encountered a segmentation fault. "
-                        "This is a known issue with the official implementation. "
-                        "Possible solutions:\n"
-                        "- Try a different protein structure\n" 
-                        "- Use structures with fewer residues\n"
-                        "- Check system memory availability"
+                results['discotope_fallback'] = getattr(dt_predictor, 'using_fallback', False)
+                
+                # Check if fallback was used and display appropriate message
+                if hasattr(dt_predictor, 'using_fallback') and dt_predictor.using_fallback:
+                    st.warning("🔄 **DiscoTope-3.0 Fallback Mode Active**")
+                    st.info(
+                        f"Official DiscoTope-3.0 encountered technical issues and switched to fallback mode. "
+                        f"Results are generated using structure-based heuristics. "
+                        f"**{len(dt_results)} residues analyzed**"
                     )
                 else:
-                    st.error(f"DiscoTope-3.0 failed: {error_msg}")
+                    st.success(f"✅ **DiscoTope-3.0 Official Model**: {len(dt_results)} residues analyzed")
+            except Exception as e:
+                error_msg = str(e)
+                st.error(f"DiscoTope-3.0 failed: {error_msg}")
                 results['discotope'] = None
+                results['discotope_fallback'] = False
     else:
         results['discotope'] = None
+        results['discotope_fallback'] = False
     
     return results
 
@@ -342,7 +349,8 @@ def main():
         
         # Display results
         if results['bepipred'] or results['discotope']:
-            visualize_epitope_predictions(sequence, results['bepipred'], results['discotope'])
+            visualize_epitope_predictions(sequence, results['bepipred'], results['discotope'], 
+                                         results.get('discotope_fallback', False))
             
             # 3D Structure Visualization
             if structure_content and results['discotope']:

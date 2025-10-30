@@ -111,6 +111,13 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
             results = predictor.predict_epitopes(structure_content, structure_type, threshold)
         
         if results:
+            # Check if fallback was used and display appropriate message
+            if hasattr(predictor, 'using_fallback') and predictor.using_fallback:
+                st.warning("🔄 **DiscoTope-3.0 Fallback Mode Active**")
+                st.info("Official DiscoTope-3.0 encountered issues. Using structure-based heuristic predictions.")
+            else:
+                st.success("✅ **DiscoTope-3.0 Official Model** completed successfully")
+            
             df = pd.DataFrame(results, columns=[
                 "PDB_ID", "Chain", "Position", "Residue", 
                 "Raw_Score", "Calibrated_Score", "Prediction"
