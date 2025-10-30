@@ -49,20 +49,23 @@ class DiscoTopePredictor:
             
             logger.info(f"Running command: {' '.join(cmd)}")
             
-        try:
-            result = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True, 
-                timeout=300,  # 5 minute timeout
-                cwd=str(DISCOTOPE_DIR)
-            )
-        except subprocess.TimeoutExpired:
-            logger.error("DiscoTope CLI timed out after 5 minutes")
-            raise RuntimeError(
-                "DiscoTope CLI timed out. This may indicate system resource issues "
-                "or problems with the ESM model loading."
-            )
+            try:
+                result = subprocess.run(
+                    cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=300,  # 5 minute timeout
+                    cwd=str(DISCOTOPE_DIR)
+                )
+            except subprocess.TimeoutExpired:
+                logger.error("DiscoTope CLI timed out after 5 minutes")
+                raise RuntimeError(
+                    "DiscoTope CLI timed out. This may indicate system resource issues "
+                    "or problems with the ESM model loading."
+                )
+            
+            if result is None:
+                raise RuntimeError("DiscoTope CLI failed to execute properly")
             
             if result.returncode != 0:
                 logger.error(f"DiscoTope CLI failed with return code {result.returncode}")
@@ -92,19 +95,29 @@ class DiscoTopePredictor:
             all_results = []
             for csv_file in csv_files:
                 logger.info(f"Reading CSV file: {csv_file}")
-                df = pd.read_csv(csv_file)
-                
-                for _, row in df.iterrows():
-                    prediction = 1 if row.get('predicted_epitope', False) else 0
-                    all_results.append((
-                        str(row['pdb']), 
-                        str(row['pdb']).split('_')[-1] if '_' in str(row['pdb']) else 'A',  # chain
-                        int(row['res_id']), 
-                        str(row['residue']),
-                        float(row['DiscoTope-3.0_score']),  # raw score
-                        float(row['DiscoTope-3.0_score']),  # calibrated score (same for CLI)
-                        prediction
-                    ))
+                try:
+                    df = pd.read_csv(csv_file)
+                    if df.empty:
+                        logger.warning(f"CSV file {csv_file} is empty")
+                        continue
+                        
+                    for _, row in df.iterrows():
+                        prediction = 1 if row.get('predicted_epitope', False) else 0
+                        all_results.append((
+                            str(row['pdb']), 
+                            str(row['pdb']).split('_')[-1] if '_' in str(row['pdb']) else 'A',  # chain
+                            int(row['res_id']), 
+                            str(row['residue']),
+                            float(row['DiscoTope-3.0_score']),  # raw score
+                            float(row['DiscoTope-3.0_score']),  # calibrated score (same for CLI)
+                            prediction
+                        ))
+                except Exception as e:
+                    logger.error(f"Error parsing CSV file {csv_file}: {e}")
+                    raise RuntimeError(f"Failed to parse DiscoTope output: {e}")
+            
+            if not all_results:
+                raise RuntimeError("No valid results found in DiscoTope output")
             
             logger.info(f"CLI prediction complete: {len(all_results)} residues")
             return all_results
