@@ -35,18 +35,18 @@ def run_predictions(uniprot_id: str, bepipred_threshold: float, discotope_thresh
         st.success(f"Retrieved protein {uniprot_id} (Length: {len(sequence)} residues)")
         st.info(f"Structure type: {structure_type}")
         
-        col1, col2 = st.columns(2)
+        # BepiPred-3.0 Results (Full Width)
+        st.header("🧬 BepiPred-3.0 (Sequence-based)")
+        run_bepipred(sequence, uniprot_id, bepipred_threshold)
         
-        with col1:
-            st.subheader("BepiPred-3.0 (Sequence-based)")
-            run_bepipred(sequence, uniprot_id, bepipred_threshold)
+        st.divider()
         
-        with col2:
-            st.subheader("DiscoTope-3.0 (Structure-based)")
-            if structure_content:
-                run_discotope(structure_content, structure_type, uniprot_id, discotope_threshold)
-            else:
-                st.warning("No structure available for this protein")
+        # DiscoTope-3.0 Results (Full Width)  
+        st.header("🔬 DiscoTope-3.0 (Structure-based)")
+        if structure_content:
+            run_discotope(structure_content, structure_type, uniprot_id, discotope_threshold)
+        else:
+            st.warning("No structure available for this protein")
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -66,30 +66,39 @@ def run_bepipred(sequence: str, uniprot_id: str, threshold: float):
             df = pd.DataFrame(results, columns=["Position", "Residue", "Score", "Prediction"])
             epitope_count = len(df[df["Prediction"] == "Epitope"])
             
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Predicted Epitopes", epitope_count)
             with col2:
                 st.metric("Total Residues", len(df))
+            with col3:
+                st.metric("Epitope Percentage", f"{epitope_count/len(df)*100:.1f}%")
             
             fig = px.bar(df, x="Position", y="Score", color="Prediction",
                         title="BepiPred-3.0 Epitope Scores",
                         color_discrete_map={"Epitope": "#ff6b6b", "Non-Epitope": "#4ecdc4"},
-                        height=400)
+                        height=600)
             fig.add_hline(y=threshold, line_dash="dash", 
                          annotation_text=f"Threshold ({threshold:.4f})")
+            fig.update_layout(
+                xaxis_title="Residue Position",
+                yaxis_title="Epitope Score",
+                showlegend=True,
+                font=dict(size=12)
+            )
             st.plotly_chart(fig, use_container_width=True)
             
-            if st.checkbox("Show detailed results", key="bepipred_details"):
-                st.dataframe(df, height=300)
-                
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download BepiPred Results",
-                    data=csv,
-                    file_name=f"bepipred_{uniprot_id}.csv",
-                    mime="text/csv"
-                )
+            # Show detailed results by default
+            st.subheader("📊 Detailed Results")
+            st.dataframe(df, height=400, use_container_width=True)
+            
+            csv = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download BepiPred Results",
+                data=csv,
+                file_name=f"bepipred_{uniprot_id}.csv",
+                mime="text/csv"
+            )
         else:
             st.error("BepiPred prediction failed")
     
@@ -115,11 +124,13 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
             df["Epitope"] = df["Prediction"].map({1: "Epitope", 0: "Non-Epitope"})
             epitope_count = len(df[df["Prediction"] == 1])
             
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Predicted Epitopes", epitope_count)
             with col2:
                 st.metric("Total Residues", len(df))
+            with col3:
+                st.metric("Epitope Percentage", f"{epitope_count/len(df)*100:.1f}%")
             
             fig = go.Figure()
             fig.add_trace(go.Scatter(
@@ -129,7 +140,7 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 marker=dict(
                     color=df["Prediction"], 
                     colorscale=[[0, '#4ecdc4'], [1, '#ff6b6b']],
-                    size=8,
+                    size=10,
                     line=dict(width=1, color='white')
                 ),
                 text=df["Residue"],
@@ -142,21 +153,23 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 title="DiscoTope-3.0 Epitope Scores",
                 xaxis_title="Residue Position",
                 yaxis_title="Calibrated Score",
-                height=400
+                height=600,
+                font=dict(size=12)
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            if st.checkbox("Show detailed results", key="discotope_details"):
-                display_df = df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
-                st.dataframe(display_df, height=300)
-                
-                csv = display_df.to_csv(index=False)
-                st.download_button(
-                    label="Download DiscoTope Results",
-                    data=csv,
-                    file_name=f"discotope_{uniprot_id}.csv",
-                    mime="text/csv"
-                )
+            # Show detailed results by default
+            st.subheader("📊 Detailed Results")
+            display_df = df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
+            st.dataframe(display_df, height=400, use_container_width=True)
+            
+            csv = display_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download DiscoTope Results",
+                data=csv,
+                file_name=f"discotope_{uniprot_id}.csv",
+                mime="text/csv"
+            )
         else:
             st.error("DiscoTope prediction failed")
     
