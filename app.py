@@ -165,7 +165,19 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
             st.error("DiscoTope prediction failed")
     
     except Exception as e:
-        st.error(f"DiscoTope error: {str(e)}")
+        error_msg = str(e)
+        if "segmentation fault" in error_msg.lower() or "ESM-IF1" in error_msg:
+            st.error("⚠️ **DiscoTope-3.0 Failed Due to Model Issues**")
+            st.warning(
+                "The official DiscoTope-3.0 ESM-IF1 model encountered a segmentation fault. "
+                "This is a known issue with the official implementation. "
+                "Possible solutions:\n"
+                "- Try a different protein structure\n" 
+                "- Use structures with fewer residues\n"
+                "- Check system memory availability"
+            )
+        else:
+            st.error(f"DiscoTope error: {error_msg}")
 
 if __name__ == "__main__":
     main()

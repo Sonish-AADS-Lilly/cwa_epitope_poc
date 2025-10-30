@@ -49,6 +49,7 @@ class DiscoTopePredictor:
             
             logger.info(f"Running command: {' '.join(cmd)}")
             
+        try:
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
@@ -56,12 +57,29 @@ class DiscoTopePredictor:
                 timeout=300,  # 5 minute timeout
                 cwd=str(DISCOTOPE_DIR)
             )
+        except subprocess.TimeoutExpired:
+            logger.error("DiscoTope CLI timed out after 5 minutes")
+            raise RuntimeError(
+                "DiscoTope CLI timed out. This may indicate system resource issues "
+                "or problems with the ESM model loading."
+            )
             
             if result.returncode != 0:
                 logger.error(f"DiscoTope CLI failed with return code {result.returncode}")
                 logger.error(f"STDOUT: {result.stdout}")
                 logger.error(f"STDERR: {result.stderr}")
-                raise RuntimeError(f"DiscoTope CLI failed: {result.stderr}")
+                
+                # Provide specific error message for segmentation fault
+                if result.returncode == -11:
+                    error_msg = (
+                        "DiscoTope CLI failed due to segmentation fault (likely ESM-IF1 model issue). "
+                        "This is a known issue with the official DiscoTope-3.0 implementation. "
+                        "Try using a different protein structure or check system requirements."
+                    )
+                else:
+                    error_msg = f"DiscoTope CLI failed: {result.stderr}"
+                
+                raise RuntimeError(error_msg)
             
             logger.info("DiscoTope CLI completed successfully")
             logger.info(f"STDOUT: {result.stdout}")

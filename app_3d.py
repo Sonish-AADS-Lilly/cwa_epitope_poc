@@ -264,7 +264,19 @@ def run_predictions(uniprot_id: str, sequence: str, structure_content: str, stru
                 results['discotope'] = dt_results
                 st.success(f"DiscoTope-3.0 completed: {len(dt_results)} residues analyzed")
             except Exception as e:
-                st.error(f"DiscoTope-3.0 failed: {str(e)}")
+                error_msg = str(e)
+                if "segmentation fault" in error_msg.lower() or "ESM-IF1" in error_msg:
+                    st.error("⚠️ **DiscoTope-3.0 Failed Due to Model Issues**")
+                    st.warning(
+                        "The official DiscoTope-3.0 ESM-IF1 model encountered a segmentation fault. "
+                        "This is a known issue with the official implementation. "
+                        "Possible solutions:\n"
+                        "- Try a different protein structure\n" 
+                        "- Use structures with fewer residues\n"
+                        "- Check system memory availability"
+                    )
+                else:
+                    st.error(f"DiscoTope-3.0 failed: {error_msg}")
                 results['discotope'] = None
     else:
         results['discotope'] = None
