@@ -1,5 +1,5 @@
 import tempfile
-import os
+import torch
 from pathlib import Path
 from typing import List, Tuple
 import sys
@@ -10,7 +10,6 @@ try:
     from bp3 import bepipred3
     BEPIPRED_AVAILABLE = True
 except ImportError:
-    print("Warning: BepiPred-3.0 bp3 module not available")
     BEPIPRED_AVAILABLE = False
 
 class BepiPredPredictor:
@@ -19,7 +18,7 @@ class BepiPredPredictor:
     
     def predict_epitopes(self, sequence: str, uniprot_id: str = "protein", threshold: float = 0.1512) -> List[Tuple[int, str, float, str]]:
         if not self.available:
-            raise RuntimeError("BepiPred-3.0 is not available. Please install the bp3 package.")
+            raise RuntimeError("BepiPred-3.0 is not available")
         
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -34,22 +33,15 @@ class BepiPredPredictor:
                 predictor = bepipred3.BP3EnsemblePredict(antigens)
                 predictor.run_bp3_ensemble()
                 
-                results = []
-                # Get predictions from antigens object
                 if not antigens.ensemble_probs or len(antigens.ensemble_probs) == 0:
                     raise RuntimeError("No predictions available")
                 
-                # Get predictions for the first (and only) sequence
-                model_predictions = antigens.ensemble_probs[0]  # List of tensors from different models
-                
-                # Average the ensemble predictions
-                import torch
+                model_predictions = antigens.ensemble_probs[0]
                 stacked_predictions = torch.stack(model_predictions)
                 averaged_scores = torch.mean(stacked_predictions, dim=0)
-                
-                # Convert to list for processing
                 scores = averaged_scores.tolist()
                 
+                results = []
                 for i, (residue, score) in enumerate(zip(sequence, scores)):
                     prediction = "Epitope" if score >= threshold else "Non-Epitope"
                     results.append((i + 1, residue, float(score), prediction))

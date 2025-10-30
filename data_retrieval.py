@@ -1,63 +1,42 @@
 import requests
-from typing import Optional, Tuple
-import ssl
 import urllib3
+from typing import Tuple, Optional
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def get_uniprot_sequence(uniprot_id: str) -> str:
-    url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.fasta"
-    response = requests.get(url, timeout=30, verify=False)
+    url = f"https://www.uniprot.org/uniprot/{uniprot_id}.fasta"
+    response = requests.get(url, verify=False)
     response.raise_for_status()
-    lines = response.text.strip().split('\n')
-    return ''.join(lines[1:])
-
-def get_alphafold_structure(uniprot_id: str) -> Optional[str]:
-    url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb"
-    try:
-        response = requests.get(url, timeout=30, verify=False)
-        if response.status_code == 200:
-            return response.text
-    except:
-        pass
-    return None
-
-def get_pdb_structure(uniprot_id: str) -> Optional[str]:
-    search_url = "https://search.rcsb.org/rcsbsearch/v2/query"
-    query = {
-        "query": {
-            "type": "terminal",
-            "service": "text",
-            "parameters": {
-                "attribute": "rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers.database_accession",
-                "operator": "exact_match",
-                "value": uniprot_id
-            }
-        },
-        "return_type": "entry"
-    }
     
-    try:
-        response = requests.post(search_url, json=query, timeout=30, verify=False)
-        if response.status_code == 200:
-            results = response.json()
-            if results.get("result_set"):
-                pdb_id = results["result_set"][0]["identifier"]
-                pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
-                pdb_response = requests.get(pdb_url, timeout=30, verify=False)
-                if pdb_response.status_code == 200:
-                    return pdb_response.text
-    except:
-        pass
-    return None
+    lines = response.text.strip().split('\n')
+    sequence = ''.join(lines[1:])
+    return sequence
 
 def get_structure_content(uniprot_id: str) -> Tuple[Optional[str], str]:
-    pdb_content = get_pdb_structure(uniprot_id)
-    if pdb_content:
-        return pdb_content, "solved"
+    pdb_url = f"https://www.uniprot.org/uniprot/{uniprot_id}.txt"
+    response = requests.get(pdb_url, verify=False)
+    response.raise_for_status()
     
-    alphafold_content = get_alphafold_structure(uniprot_id)
-    if alphafold_content:
-        return alphafold_content, "alphafold"
+    pdb_id = None
+    for line in response.text.split('\n'):
+        if line.startswith('DR   PDB;'):
+            pdb_id = line.split(';')[1].strip()
+            break
     
-    return None, "none"
+    if pdb_id:
+        try:
+            structure_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
+            structure_response = requests.get(structure_url, verify=False)
+            structure_response.raise_for_status()
+            return structure_response.text, "solved"
+        except requests.RequestException:
+            pass
+    
+    try:
+        alphafold_url = f"https://alphafold.ebi.ac.uk/files/AF-{uniprot_id}-F1-model_v4.pdb"
+        alphafold_response = requests.get(alphafold_url, verify=False)
+        alphafold_response.raise_for_status()
+        return alphafold_response.text, "alphafold"
+    except requests.RequestException:
+        return None, "none"

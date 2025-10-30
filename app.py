@@ -10,21 +10,22 @@ st.set_page_config(page_title="Epitope Prediction Platform", layout="wide")
 
 def main():
     st.title("Epitope Prediction Platform")
-    st.markdown("**BepiPred-3.0** (sequence-based) and **DiscoTope-3.0** (structure-based) predictions")
+    st.markdown("BepiPred-3.0 (sequence-based) and DiscoTope-3.0 (structure-based) predictions")
     
     with st.sidebar:
         st.header("Input")
-        uniprot_id = st.text_input("UniProt ID", value="P00779", help="Example: P00779 (Cytochrome c)")
+        uniprot_id = st.text_input("UniProt ID", value="P00779")
         
-        st.markdown("### Options")
+        st.header("Options")
         bepipred_threshold = st.slider("BepiPred-3.0 Threshold", 0.0, 1.0, 0.1512, 0.001)
         discotope_threshold = st.slider("DiscoTope-3.0 Threshold", 0.0, 2.0, 0.90, 0.01)
         
-        if st.button("Run Predictions", type="primary"):
-            if uniprot_id:
-                run_predictions(uniprot_id, bepipred_threshold, discotope_threshold)
-            else:
-                st.error("Please enter a UniProt ID")
+        run_prediction = st.button("Run Predictions", type="primary")
+    
+    if run_prediction and uniprot_id:
+        run_predictions(uniprot_id, bepipred_threshold, discotope_threshold)
+    elif run_prediction and not uniprot_id:
+        st.error("Please enter a UniProt ID")
 
 def run_predictions(uniprot_id: str, bepipred_threshold: float, discotope_threshold: float):
     try:
@@ -35,14 +36,10 @@ def run_predictions(uniprot_id: str, bepipred_threshold: float, discotope_thresh
         st.success(f"Retrieved protein {uniprot_id} (Length: {len(sequence)} residues)")
         st.info(f"Structure type: {structure_type}")
         
-        # BepiPred-3.0 Results (Full Width)
-        st.header("🧬 BepiPred-3.0 (Sequence-based)")
+        st.header("BepiPred-3.0 (Sequence-based)")
         run_bepipred(sequence, uniprot_id, bepipred_threshold)
         
-        st.divider()
-        
-        # DiscoTope-3.0 Results (Full Width)  
-        st.header("🔬 DiscoTope-3.0 (Structure-based)")
+        st.header("DiscoTope-3.0 (Structure-based)")
         if structure_content:
             run_discotope(structure_content, structure_type, uniprot_id, discotope_threshold)
         else:
@@ -56,7 +53,7 @@ def run_bepipred(sequence: str, uniprot_id: str, threshold: float):
         predictor = BepiPredPredictor()
         
         if not predictor.available:
-            st.error("BepiPred-3.0 is not available. Please check the installation.")
+            st.error("BepiPred-3.0 is not available")
             return
             
         with st.spinner("Running BepiPred-3.0..."):
@@ -77,24 +74,17 @@ def run_bepipred(sequence: str, uniprot_id: str, threshold: float):
             fig = px.bar(df, x="Position", y="Score", color="Prediction",
                         title="BepiPred-3.0 Epitope Scores",
                         color_discrete_map={"Epitope": "#ff6b6b", "Non-Epitope": "#4ecdc4"},
-                        height=600)
+                        height=500)
             fig.add_hline(y=threshold, line_dash="dash", 
                          annotation_text=f"Threshold ({threshold:.4f})")
-            fig.update_layout(
-                xaxis_title="Residue Position",
-                yaxis_title="Epitope Score",
-                showlegend=True,
-                font=dict(size=12)
-            )
             st.plotly_chart(fig, use_container_width=True)
             
-            # Show detailed results by default
-            st.subheader("📊 Detailed Results")
-            st.dataframe(df, height=400, use_container_width=True)
+            st.subheader("Detailed Results")
+            st.dataframe(df, height=300, use_container_width=True)
             
             csv = df.to_csv(index=False)
             st.download_button(
-                label="📥 Download BepiPred Results",
+                label="Download BepiPred Results",
                 data=csv,
                 file_name=f"bepipred_{uniprot_id}.csv",
                 mime="text/csv"
@@ -110,7 +100,7 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
         predictor = DiscoTopePredictor()
         
         if not predictor.available:
-            st.error("DiscoTope-3.0 is not available. Please check the installation.")
+            st.error("DiscoTope-3.0 is not available")
             return
             
         with st.spinner("Running DiscoTope-3.0..."):
@@ -140,8 +130,7 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 marker=dict(
                     color=df["Prediction"], 
                     colorscale=[[0, '#4ecdc4'], [1, '#ff6b6b']],
-                    size=10,
-                    line=dict(width=1, color='white')
+                    size=8
                 ),
                 text=df["Residue"],
                 customdata=df["Chain"],
@@ -153,19 +142,17 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 title="DiscoTope-3.0 Epitope Scores",
                 xaxis_title="Residue Position",
                 yaxis_title="Calibrated Score",
-                height=600,
-                font=dict(size=12)
+                height=500
             )
             st.plotly_chart(fig, use_container_width=True)
             
-            # Show detailed results by default
-            st.subheader("📊 Detailed Results")
+            st.subheader("Detailed Results")
             display_df = df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
-            st.dataframe(display_df, height=400, use_container_width=True)
+            st.dataframe(display_df, height=300, use_container_width=True)
             
             csv = display_df.to_csv(index=False)
             st.download_button(
-                label="📥 Download DiscoTope Results",
+                label="Download DiscoTope Results",
                 data=csv,
                 file_name=f"discotope_{uniprot_id}.csv",
                 mime="text/csv"
