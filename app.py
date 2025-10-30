@@ -31,17 +31,21 @@ def run_predictions(uniprot_id: str, bepipred_threshold: float, discotope_thresh
     try:
         with st.spinner("Retrieving protein data..."):
             sequence = get_uniprot_sequence(uniprot_id)
-            structure_content, structure_type = get_structure_content(uniprot_id)
+            structure_content = get_structure_content(uniprot_id, 'alphafold')
         
         st.success(f"Retrieved protein {uniprot_id} (Length: {len(sequence)} residues)")
-        st.info(f"Structure type: {structure_type}")
+        
+        if structure_content:
+            st.info("Structure type: AlphaFold prediction")
+        else:
+            st.warning("No AlphaFold structure available")
         
         st.header("BepiPred-3.0 (Sequence-based)")
         run_bepipred(sequence, uniprot_id, bepipred_threshold)
         
         st.header("DiscoTope-3.0 (Structure-based)")
         if structure_content:
-            run_discotope(structure_content, structure_type, uniprot_id, discotope_threshold)
+            run_discotope(structure_content, 'alphafold', uniprot_id, discotope_threshold)
         else:
             st.warning("No structure available for this protein")
     
