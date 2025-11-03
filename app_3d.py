@@ -10,8 +10,13 @@ from plotly.subplots import make_subplots
 import numpy as np
 import re
 from typing import List, Tuple
-import stmol
 import py3Dmol
+
+try:
+    import stmol
+    STMOL_AVAILABLE = True
+except ImportError:
+    STMOL_AVAILABLE = False
 
 st.set_page_config(
     page_title="Epitope Prediction PoC",
@@ -58,15 +63,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def create_3d_structure_viewer(pdb_content: str, epitope_positions: List[int], protein_id: str = "protein"):
-    epitope_pos_str = ",".join(map(str, epitope_positions))
-    
-    viewer_html = f"""
-    <div style="height: 600px; width: 100%; position: relative;">
-        <div id="3dmol-viewer" style="height: 600px; width: 100%; position: relative;"></div>
-    </div>
-    """
-    
-    return viewer_html
+    try:
+        view = py3Dmol.view(width=800, height=600)
+        view.addModel(pdb_content, 'pdb')
+        
+        view.setStyle({'cartoon': {'color': 'lightblue'}})
+        
+        if epitope_positions:
+            for pos in epitope_positions:
+                view.addStyle({'resi': pos}, {'sphere': {'color': 'red', 'radius': 1.5}})
+        
+        view.zoomTo()
+        return view
+    except Exception as e:
+        st.error(f"Error creating 3D viewer: {str(e)}")
+        return None
 
 def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: List = None, dt_fallback: bool = False):
     """Create comprehensive visualizations for epitope predictions"""
@@ -409,11 +420,15 @@ def main():
                 st.markdown('<div class="section-header">3D Structure Visualization</div>', unsafe_allow_html=True)
                 
                 try:
-                    view = create_3d_structure_viewer(structure_content, results['discotope'], 
+                    epitope_positions = [r[2] for r in results['discotope'] if r[6] == 1]
+                    view = create_3d_structure_viewer(structure_content, epitope_positions, 
                                                     f"{uniprot_id} - Epitopes Highlighted")
-                    if view:
+                    if view and STMOL_AVAILABLE:
                         st.markdown("**Interactive 3D Structure** (Epitopes in red):")
                         stmol.showmol(view, height=600, width=800)
+                    elif view:
+                        st.warning("3D visualization requires stmol package. Install with: pip install stmol")
+                        st.info(f"Structure loaded with {len(epitope_positions)} epitope positions highlighted")
                     else:
                         st.warning("Could not create 3D visualization")
                 except Exception as e:

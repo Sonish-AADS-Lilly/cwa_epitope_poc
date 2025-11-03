@@ -41,9 +41,11 @@ class DiscoTopePredictor:
             return self._predict_fallback(structure_content, structure_type, threshold)
     
     def _predict_official_cli(self, structure_content: str, structure_type: str, threshold: float) -> List[Tuple[str, str, int, str, float, float, int]]:
-        """Use official DiscoTope command-line interface for prediction"""
-        """Use official DiscoTope command-line interface for prediction"""
         logger.info(f"Starting official DiscoTope CLI prediction with structure_type: {structure_type}")
+        
+        # Map structure types to DiscoTope CLI expected values
+        dt_structure_type = "alphafold" if structure_type in ["alphafold", "af"] else "solved"
+        logger.info(f"Using DiscoTope structure type: {dt_structure_type}")
         
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -60,10 +62,10 @@ class DiscoTopePredictor:
             cmd = [
                 sys.executable, str(self.discotope_main),
                 "--pdb_or_zip_file", str(pdb_file),
-                "--struc_type", structure_type,
+                "--struc_type", dt_structure_type,
                 "--out_dir", str(output_dir),
                 "--calibrated_score_epi_threshold", str(threshold),
-                "--cpu_only"  # Force CPU to avoid GPU issues
+                "--cpu_only"
             ]
             
             logger.info(f"Running command: {' '.join(cmd)}")

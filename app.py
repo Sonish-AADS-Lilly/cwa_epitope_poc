@@ -235,7 +235,7 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 "PDB_ID", "Chain", "Position", "Residue", 
                 "Raw_Score", "Calibrated_Score", "Prediction"
             ])
-            df["Epitope"] = df["Prediction"].map({1: "Epitope", 0: "Non-Epitope"})
+            
             epitope_count = len(df[df["Prediction"] == 1])
             
             col1, col2, col3 = st.columns(3)
@@ -279,7 +279,6 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                                 "PDB_ID", "Chain", "Position", "Residue", 
                                 "Raw_Score", "Calibrated_Score", "Prediction"
                             ])
-                            df["Epitope"] = df["Prediction"].map({1: "Epitope", 0: "Non-Epitope"})
                             epitope_count = len(df[df["Prediction"] == 1])
                             st.experimental_rerun()
             
@@ -312,7 +311,9 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
             tab1, tab2, tab3 = st.tabs(["Predictions", "Epitopes Only", "Peptides"])
             
             with tab1:
-                display_df = df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
+                display_df = df.copy()
+                display_df["Epitope"] = display_df["Prediction"].map({1: "Epitope", 0: "Non-Epitope"})
+                display_df = display_df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
                 st.dataframe(display_df, height=300, use_container_width=True)
                 
                 csv = display_df.to_csv(index=False)
@@ -324,8 +325,9 @@ def run_discotope(structure_content: str, structure_type: str, uniprot_id: str, 
                 )
             
             with tab2:
-                epitope_df = df[df["Prediction"] == 1]
+                epitope_df = df[df["Prediction"] == 1].copy()
                 if not epitope_df.empty:
+                    epitope_df["Epitope"] = "Epitope"
                     epitope_display = epitope_df[["Chain", "Position", "Residue", "Raw_Score", "Calibrated_Score", "Epitope"]]
                     st.dataframe(epitope_display, height=300, use_container_width=True)
                     
