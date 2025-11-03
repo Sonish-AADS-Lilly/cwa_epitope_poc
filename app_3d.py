@@ -15,7 +15,6 @@ import py3Dmol
 
 st.set_page_config(
     page_title="Epitope Prediction PoC",
-    page_icon="🧪",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -58,36 +57,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def create_3d_structure_viewer(structure_content: str, epitope_results: List[Tuple], title: str = "Protein Structure"):
-    """Create 3D molecular viewer with epitopes highlighted"""
+def create_3d_structure_viewer(pdb_content: str, epitope_positions: List[int], protein_id: str = "protein"):
+    epitope_pos_str = ",".join(map(str, epitope_positions))
     
-    if not structure_content or not epitope_results:
-        return None
+    viewer_html = f"""
+    <div style="height: 600px; width: 100%; position: relative;">
+        <div id="3dmol-viewer" style="height: 600px; width: 100%; position: relative;"></div>
+    </div>
+    """
     
-    # Create py3Dmol viewer
-    view = py3Dmol.view(width=800, height=600)
-    view.addModel(structure_content, 'pdb')
-    
-    # Style the protein
-    view.setStyle({'cartoon': {'color': 'lightgray'}})
-    
-    # Highlight epitopes in red
-    epitope_residues = []
-    for result in epitope_results:
-        if len(result) >= 7 and result[6] == 1:  # prediction == 1 (epitope)
-            chain = result[1] if len(result) > 1 else 'A'
-            res_num = result[2] if len(result) > 2 else 1
-            epitope_residues.append({'chain': chain, 'resi': res_num})
-    
-    if epitope_residues:
-        for residue in epitope_residues:
-            view.addStyle({'chain': residue['chain'], 'resi': residue['resi']}, 
-                         {'stick': {'colorscheme': 'redCarbon'}, 'sphere': {'color': 'red', 'opacity': 0.8}})
-    
-    view.zoomTo()
-    view.spin(True)
-    
-    return view
+    return viewer_html
 
 def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: List = None, dt_fallback: bool = False):
     """Create comprehensive visualizations for epitope predictions"""
@@ -244,8 +223,81 @@ def visualize_epitope_predictions(sequence: str, bp_results: List, dt_results: L
             st.metric("Avg Calibrated Score", f"{avg_cal_score:.3f}")
             st.markdown('</div>', unsafe_allow_html=True)
 
+def extract_peptides(sequence: str, epitope_positions: List[int], center_position: int = 4, min_length: int = 3) -> List[dict]:
+    peptides = []
+    epitope_positions = sorted(epitope_positions)
+    
+    groups = []
+    current_group = [epitope_positions[0]] if epitope_positions else []
+    
+    for i in range(1, len(epitope_positions)):
+        if epitope_positions[i] - epitope_positions[i-1] == 1:
+            current_group.append(epitope_positions[i])
+        else:
+            if len(current_group) >= min_length:
+                groups.append(current_group)
+            current_group = [epitope_positions[i]]
+    
+    if len(current_group) >= min_length:
+        groups.append(current_group)
+    
+    for group in groups:
+        start_pos = max(0, group[0] - 1 - center_position)
+        end_pos = min(len(sequence), group[-1] + center_position)
+        
+        peptide_seq = sequence[start_pos:end_pos]
+        core_start = group[0] - 1 - start_pos
+        core_end = group[-1] - start_pos
+        
+        peptides.append({
+            'Peptide': peptide_seq,
+            'Start': start_pos + 1,
+            'End': end_pos,
+            'Length': len(peptide_seq),
+            'Core_Epitope': sequence[group[0]-1:group[-1]],
+            'Core_Start': core_start + 1,
+            'Core_End': core_end,
+            'Positions': f"{group[0]}-{group[-1]}"
+        })
+    
+    return peptides
+
+def recalculate_epitopes(sequence: str, bp_results: List, dt_results: List, 
+                        bp_threshold: float, dt_threshold: float, 
+                        center_position: int) -> Tuple[pd.DataFrame, pd.DataFrame, List[dict], List[dict]]:
+    results = {'bepipred': None, 'discotope': None, 'bepipred_peptides': [], 'discotope_peptides': []}
+    
+    if bp_results:
+        # Recalculate BepiPred predictions
+        bp_recalc = []
+        bp_epitope_positions = []
+        
+        for pos, residue, score, _ in bp_results:
+            prediction = "Epitope" if score >= bp_threshold else "Non-Epitope"
+            bp_recalc.append((pos, residue, score, prediction))
+            if prediction == "Epitope":
+                bp_epitope_positions.append(pos)
+        
+        results['bepipred'] = bp_recalc
+        results['bepipred_peptides'] = extract_peptides(sequence, bp_epitope_positions)
+    
+    if dt_results:
+        # Recalculate DiscoTope predictions
+        dt_recalc = []
+        dt_epitope_positions = []
+        
+        for pdb_id, chain, pos, residue, raw_score, calib_score, _ in dt_results:
+            prediction = 1 if calib_score >= dt_threshold else 0
+            dt_recalc.append((pdb_id, chain, pos, residue, raw_score, calib_score, prediction))
+            if prediction == 1:
+                dt_epitope_positions.append(pos)
+        
+        results['discotope'] = dt_recalc
+        results['discotope_peptides'] = extract_peptides(sequence, dt_epitope_positions)
+    
+    return results
+
 def run_predictions(uniprot_id: str, sequence: str, structure_content: str, structure_type: str):
-    """Run both BepiPred and DiscoTope predictions"""
     
     results = {}
     
@@ -367,49 +419,138 @@ def main():
                 except Exception as e:
                     st.error(f"3D visualization failed: {str(e)}")
             
-            # Data tables
+            # Data tables with interactive recalculation
             st.markdown('<div class="section-header">Detailed Results</div>', unsafe_allow_html=True)
+            
+            # Interactive parameter controls
+            with st.expander("🔧 Recalculate with Different Parameters", expanded=False):
+                col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
+                
+                with col1:
+                    new_bp_threshold = st.number_input(
+                        "BepiPred Threshold:", 
+                        min_value=0.0, max_value=1.0, value=0.1512, step=0.01,
+                        help="Threshold for BepiPred epitope prediction"
+                    )
+                
+                with col2:
+                    new_dt_threshold = st.number_input(
+                        "DiscoTope Threshold:", 
+                        min_value=0.0, max_value=1.0, value=0.5, step=0.01,
+                        help="Threshold for DiscoTope epitope prediction"
+                    )
+                
+                with col3:
+                    center_position = st.number_input(
+                        "Center Position:", 
+                        min_value=0, max_value=10, value=4, step=1,
+                        help="Number of residues to extend around epitope core"
+                    )
+                
+                with col4:
+                    if st.button("🔄 Recalculate", use_container_width=True):
+                        # Recalculate with new parameters
+                        recalc_results = recalculate_epitopes(
+                            sequence, results['bepipred'], results['discotope'],
+                            new_bp_threshold, new_dt_threshold
+                        )
+                        # Update session state with recalculated results
+                        st.session_state.recalc_results = recalc_results
+                        st.session_state.center_position = center_position
+                        st.rerun()
+            
+            # Use recalculated results if available
+            display_results = getattr(st.session_state, 'recalc_results', results)
+            center_pos = getattr(st.session_state, 'center_position', 4)
+            
+            # Generate peptides if not already calculated
+            if 'bepipred_peptides' not in display_results:
+                bp_epitope_positions = []
+                dt_epitope_positions = []
+                
+                if display_results['bepipred']:
+                    bp_epitope_positions = [pos for pos, _, _, pred in display_results['bepipred'] if pred == 'Epitope']
+                
+                if display_results['discotope']:
+                    dt_epitope_positions = [pos for _, _, pos, _, _, _, pred in display_results['discotope'] if pred == 1]
+                
+                display_results['bepipred_peptides'] = extract_peptides(sequence, bp_epitope_positions, center_pos)
+                display_results['discotope_peptides'] = extract_peptides(sequence, dt_epitope_positions, center_pos)
             
             tab1, tab2 = st.tabs(["BepiPred-3.0 Results", "DiscoTope-3.0 Results"])
             
             with tab1:
-                if results['bepipred']:
-                    bp_df = pd.DataFrame(results['bepipred'], 
+                if display_results['bepipred']:
+                    bp_df = pd.DataFrame(display_results['bepipred'], 
                                        columns=['Position', 'Residue', 'Score', 'Prediction'])
                     epitope_df = bp_df[bp_df['Prediction'] == 'Epitope']
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.subheader("All Predictions")
+                    subtab1, subtab2, subtab3 = st.tabs(["All Predictions", "Epitopes Only", "Peptides"])
+                    
+                    with subtab1:
                         st.dataframe(bp_df, use_container_width=True)
                     
-                    with col2:
-                        st.subheader("Predicted Epitopes Only")
+                    with subtab2:
                         if not epitope_df.empty:
                             st.dataframe(epitope_df, use_container_width=True)
+                            st.metric("Total Epitope Residues", len(epitope_df))
                         else:
                             st.info("No epitopes predicted with current threshold")
+                    
+                    with subtab3:
+                        if display_results['bepipred_peptides']:
+                            peptides_df = pd.DataFrame(display_results['bepipred_peptides'])
+                            st.dataframe(peptides_df, use_container_width=True)
+                            
+                            # Summary metrics
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Total Peptides", len(peptides_df))
+                            with col2:
+                                avg_length = peptides_df['Length'].mean() if len(peptides_df) > 0 else 0
+                                st.metric("Avg Peptide Length", f"{avg_length:.1f}")
+                            with col3:
+                                st.metric("Center Extension", center_pos)
+                        else:
+                            st.info("No peptides found with current parameters")
                 else:
                     st.info("BepiPred-3.0 results not available")
             
             with tab2:
-                if results['discotope']:
-                    dt_df = pd.DataFrame(results['discotope'], 
+                if display_results['discotope']:
+                    dt_df = pd.DataFrame(display_results['discotope'], 
                                        columns=['PDB_ID', 'Chain', 'Position', 'Residue', 
                                               'Raw_Score', 'Calibrated_Score', 'Prediction'])
                     epitope_df = dt_df[dt_df['Prediction'] == 1]
                     
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.subheader("All Predictions")
+                    subtab1, subtab2, subtab3 = st.tabs(["All Predictions", "Epitopes Only", "Peptides"])
+                    
+                    with subtab1:
                         st.dataframe(dt_df, use_container_width=True)
                     
-                    with col2:
-                        st.subheader("Predicted Epitopes Only")
+                    with subtab2:
                         if not epitope_df.empty:
                             st.dataframe(epitope_df, use_container_width=True)
+                            st.metric("Total Epitope Residues", len(epitope_df))
                         else:
                             st.info("No epitopes predicted with current threshold")
+                    
+                    with subtab3:
+                        if display_results['discotope_peptides']:
+                            peptides_df = pd.DataFrame(display_results['discotope_peptides'])
+                            st.dataframe(peptides_df, use_container_width=True)
+                            
+                            # Summary metrics
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Total Peptides", len(peptides_df))
+                            with col2:
+                                avg_length = peptides_df['Length'].mean() if len(peptides_df) > 0 else 0
+                                st.metric("Avg Peptide Length", f"{avg_length:.1f}")
+                            with col3:
+                                st.metric("Center Extension", center_pos)
+                        else:
+                            st.info("No peptides found with current parameters")
                 else:
                     st.info("DiscoTope-3.0 results not available")
         
