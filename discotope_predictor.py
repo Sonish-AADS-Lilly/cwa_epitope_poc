@@ -20,8 +20,7 @@ class DiscoTopePredictor:
         logger.info(f"DiscoTope available: {self.available}")
         logger.info(f"DiscoTope main script: {self.discotope_main}")
     
-    def predict_epitopes(self, structure_content: str, structure_type: str, threshold: float = 0.90) -> List[Tuple[str, str, int, str, float, float, int]]:
-        """Main prediction method that tries official CLI first, then fallback"""
+    def predict_epitopes(self, structure_content: str, structure_type: str, threshold: float = 0.90, protein_id: str = None) -> List[Tuple[str, str, int, str, float, float, int]]:
         logger.info(f"Starting DiscoTope prediction with structure_type: {structure_type}")
         
         if not self.available:
@@ -29,7 +28,6 @@ class DiscoTopePredictor:
             raise RuntimeError("DiscoTope-3.0 CLI is not available")
         
         try:
-            # Try official DiscoTope CLI first
             logger.info("Attempting official DiscoTope CLI prediction...")
             self.using_fallback = False
             return self._predict_official_cli(structure_content, structure_type, threshold)
@@ -38,7 +36,7 @@ class DiscoTopePredictor:
             logger.warning(f"Official CLI prediction failed: {cli_error}")
             logger.info("Falling back to structure-based heuristic prediction...")
             self.using_fallback = True
-            return self._predict_fallback(structure_content, structure_type, threshold)
+            return self._predict_fallback(structure_content, structure_type, threshold, protein_id)
     
     def _predict_official_cli(self, structure_content: str, structure_type: str, threshold: float) -> List[Tuple[str, str, int, str, float, float, int]]:
         logger.info(f"Starting official DiscoTope CLI prediction with structure_type: {structure_type}")
@@ -218,15 +216,12 @@ class DiscoTopePredictor:
         
         return np.array(scores)
     
-    def _predict_fallback(self, structure_content: str, structure_type: str, threshold: float):
-        """Fallback prediction using structure-based heuristics"""
+    def _predict_fallback(self, structure_content: str, structure_type: str, threshold: float, protein_id: str = None):
         logger.info("Using fallback structure-based prediction")
         
-        # Use a more reasonable threshold for fallback
-        fallback_threshold = min(threshold, 0.6)  # Cap at 0.6 for fallback
+        fallback_threshold = min(threshold, 0.6)
         logger.info(f"Using fallback threshold: {fallback_threshold}")
         
-        # Parse PDB structure
         residues = self._parse_pdb_basic(structure_content)
         
         if not residues:
@@ -234,17 +229,17 @@ class DiscoTopePredictor:
         
         logger.info(f"Parsed {len(residues)} residues from structure")
         
-        # Generate heuristic scores
         scores = self._generate_fallback_scores(residues)
         
-        # Create results
         results = []
-        pdb_id = "FALLBACK_STRUCT"
+        
+        # Try to extract PDB ID from structure content or use provided protein_id
+        pdb_id = self._extract_pdb_id(structure_content) or protein_id or "STRUCTURE"
         epitope_count = 0
         
         for i, (chain, res_num, res_type, aa_code) in enumerate(residues):
             raw_score = scores[i]
-            calibrated_score = raw_score * 1.1  # Simple calibration
+            calibrated_score = raw_score * 1.1
             prediction = 1 if calibrated_score >= fallback_threshold else 0
             
             if prediction == 1:
@@ -257,3 +252,15 @@ class DiscoTopePredictor:
         
         logger.info(f"Fallback prediction complete: {epitope_count} epitopes out of {len(results)} residues")
         return results
+    
+    def _extract_pdb_id(self, pdb_content: str) -> str:
+        """Extract PDB ID from PDB file content"""
+        for line in pdb_content.split('\n'):
+            if line.startswith('HEADER'):
+                # Extract PDB ID from HEADER line (usually at positions 62-66)
+                if len(line) >= 66:
+                    return line[62:66].strip()
+            elif line.startswith('ATOM') or line.startswith('HETATM'):
+                # If no HEADER, break on first ATOM line
+                break
+        return None

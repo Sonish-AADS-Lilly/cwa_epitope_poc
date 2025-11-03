@@ -328,7 +328,7 @@ def run_predictions(uniprot_id: str, sequence: str, structure_content: str, stru
         with st.spinner("Running DiscoTope-3.0 prediction..."):
             try:
                 dt_predictor = DiscoTopePredictor()
-                dt_results = dt_predictor.predict_epitopes(structure_content, structure_type)
+                dt_results = dt_predictor.predict_epitopes(structure_content, structure_type, protein_id=uniprot_id)
                 results['discotope'] = dt_results
                 results['discotope_fallback'] = getattr(dt_predictor, 'using_fallback', False)
                 
